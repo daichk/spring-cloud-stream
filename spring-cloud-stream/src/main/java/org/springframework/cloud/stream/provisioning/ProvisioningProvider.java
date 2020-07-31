@@ -23,7 +23,7 @@ import org.springframework.cloud.stream.binder.ProducerProperties;
  * Provisioning SPI that allows the users to provision destinations such as queues and
  * topics. This SPI will allow the binders to be separated from any provisioning concerns
  * and only focus on setting up endpoints for sending/receiving messages.
- *
+ * 提供如 queues 和topics 之类的destinations。允许 binders 和任意的具体供应商隔离开来，关注于 sending/receiving 消息的端点
  * Implementations must implement the following methods:
  *
  * <ul>
@@ -43,7 +43,7 @@ public interface ProvisioningProvider<C extends ConsumerProperties, P extends Pr
 	/**
 	 * Creates middleware destination on the physical broker for the producer to send
 	 * data. The implementation is middleware-specific.
-	 *
+	 * 提供一个生产者目标
 	 * @param name the name of the producer destination
 	 * @param properties producer properties
 	 * @return reference to {@link ProducerDestination} that represents a producer
@@ -54,7 +54,7 @@ public interface ProvisioningProvider<C extends ConsumerProperties, P extends Pr
 	/**
 	 * Creates the middleware destination on the physical broker for the consumer to
 	 * consume data. The implementation is middleware-specific.
-	 *
+	 * 提供一个消费者目标
 	 * @param name the name of the destination
 	 * @param group the consumer group
 	 * @param properties consumer properties

@@ -56,6 +56,8 @@ import org.springframework.util.MimeTypeUtils;
  * </li>
  * </ul>
  *
+ * 针对 MessageChannel 实现的 Binder
+ *
  * @param <C> the consumer properties type
  * @param <P> the producer properties type
  * @author Marius Bogoevici
@@ -70,6 +72,7 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 
 	/**
 	 * {@link ProvisioningProvider} delegated by the downstream binder implementations.
+	 * 用来创建 消息输入和接收服务提供商
 	 */
 	protected final PP provisioningProvider;
 

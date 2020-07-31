@@ -137,6 +137,14 @@ public abstract class AbstractBinder<T, C extends ConsumerProperties, P extends 
 		return doBindConsumer(name, group, target, properties);
 	}
 
+	/**
+	 * 绑定消费端
+	 * @param name 消息输入端点的逻辑名称
+	 * @param group 消费组名称（Queue）
+	 * @param inputTarget 消息输入服务提供商
+	 * @param properties
+	 * @return
+	 */
 	protected abstract Binding<T> doBindConsumer(String name, String group, T inputTarget, C properties);
 
 	@Override
@@ -144,6 +152,13 @@ public abstract class AbstractBinder<T, C extends ConsumerProperties, P extends 
 		return doBindProducer(name, outboundBindTarget, properties);
 	}
 
+	/**
+	 *
+	 * @param name 消息输出端点的逻辑名称
+	 * @param outboundBindTarget 消息接收服务提供商
+	 * @param properties
+	 * @return
+	 */
 	protected abstract Binding<T> doBindProducer(String name, T outboundBindTarget, P properties);
 
 	/**

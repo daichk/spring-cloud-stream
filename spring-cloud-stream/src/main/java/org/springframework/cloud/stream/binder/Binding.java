@@ -22,6 +22,8 @@ package org.springframework.cloud.stream.binder;
  * represents a connection from an adapter to an input. A producer binding represents a
  * connection from an output to an adapter.
  *
+ * 描述了一个 通过 Binder将一个 endpoint和一个input(output)连接起来的Binding
+ *
  * @author Jennifer Hickey
  * @author Mark Fisher
  * @author Gary Russell

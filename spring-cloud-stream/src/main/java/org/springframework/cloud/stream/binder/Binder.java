@@ -21,6 +21,8 @@ package org.springframework.cloud.stream.binder;
  * intended to identify a logical consumer or producer of messages. This may be a queue, a
  * channel adapter, another message channel, a Spring bean, etc.
  *
+ * 将一个逻辑name和目标对象进行绑定，目标对象既可以为输入，也可以为输出
+ *
  * @author Mark Fisher
  * @author David Turanski
  * @author Gary Russell
@@ -34,20 +36,22 @@ public interface Binder<T, C extends ConsumerProperties, P extends ProducerPrope
 	/**
 	 * Bind the target component as a message consumer to the logical entity identified by
 	 * the name.
-	 * @param name the logical identity of the message source
+	 * 绑定消费终点
+	 * @param name the logical identity of the message source 消息来源的逻辑标识
 	 * @param group the consumer group to which this consumer belongs - subscriptions are
 	 * shared among consumers in the same group (a <code>null</code> or empty String, must
 	 * be treated as an anonymous group that doesn't share the subscription with any other
-	 * consumer)
+	 * consumer) 消费组名称，同一个Group中的消息由所有的订阅端分享
 	 * @param inboundBindTarget the app interface to be bound as a consumer
 	 * @param consumerProperties the consumer properties
 	 */
 	Binding<T> bindConsumer(String name, String group, T inboundBindTarget, C consumerProperties);
 
 	/**
+	 * 绑定生产终点
 	 * Bind the target component as a message producer to the logical entity identified by
 	 * the name.
-	 * @param name the logical identity of the message target
+	 * @param name the logical identity of the message target 消息目标的逻辑标识
 	 * @param outboundBindTarget the app interface to be bound as a producer
 	 * @param producerProperties the producer properties
 	 */
