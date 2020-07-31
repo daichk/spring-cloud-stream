@@ -36,7 +36,6 @@ import org.springframework.integration.config.IntegrationConverter;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.expression.SpelPropertyAccessorRegistrar;
 import org.springframework.integration.json.JsonPropertyAccessor;
-import org.springframework.tuple.spel.TuplePropertyAccessor;
 
 /**
  * Adds a Converter from String to SpEL Expression in the context.
@@ -50,7 +49,7 @@ public class SpelExpressionConverterConfiguration {
 
 	/**
 	 * Provide a {@link SpelPropertyAccessorRegistrar} supplied with the
-	 * {@link JsonPropertyAccessor} and {@link TuplePropertyAccessor}. This bean is used
+	 * {@link JsonPropertyAccessor}. This bean is used
 	 * to customize an
 	 * {@link org.springframework.integration.config.IntegrationEvaluationContextFactoryBean}.
 	 * for additional {@link org.springframework.expression.PropertyAccessor}s.
@@ -62,10 +61,7 @@ public class SpelExpressionConverterConfiguration {
 		return new SpelPropertyAccessorRegistrar()
 				.add(Introspector
 						.decapitalize(JsonPropertyAccessor.class.getSimpleName()),
-						new JsonPropertyAccessor())
-				.add(Introspector
-						.decapitalize(TuplePropertyAccessor.class.getSimpleName()),
-						new TuplePropertyAccessor());
+						new JsonPropertyAccessor());
 	}
 
 	@Bean

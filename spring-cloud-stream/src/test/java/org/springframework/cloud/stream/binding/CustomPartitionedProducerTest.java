@@ -62,7 +62,7 @@ public class CustomPartitionedProducerTest {
 		Source testSource = context.getBean(Source.class);
 		DirectChannel messageChannel = (DirectChannel) testSource.output();
 		for (ChannelInterceptor channelInterceptor : messageChannel
-				.getChannelInterceptors()) {
+				.getInterceptors()) {
 			if (channelInterceptor instanceof MessageConverterConfigurer.PartitioningInterceptor) {
 				Field partitionHandlerField = ReflectionUtils.findField(
 						MessageConverterConfigurer.PartitioningInterceptor.class,
@@ -97,7 +97,7 @@ public class CustomPartitionedProducerTest {
 		Source testSource = context.getBean(Source.class);
 		DirectChannel messageChannel = (DirectChannel) testSource.output();
 		for (ChannelInterceptor channelInterceptor : messageChannel
-				.getChannelInterceptors()) {
+				.getInterceptors()) {
 			if (channelInterceptor instanceof MessageConverterConfigurer.PartitioningInterceptor) {
 				Field partitionHandlerField = ReflectionUtils.findField(
 						MessageConverterConfigurer.PartitioningInterceptor.class,
@@ -130,7 +130,7 @@ public class CustomPartitionedProducerTest {
 		Source testSource = context.getBean(Source.class);
 		DirectChannel messageChannel = (DirectChannel) testSource.output();
 		for (ChannelInterceptor channelInterceptor : messageChannel
-				.getChannelInterceptors()) {
+				.getInterceptors()) {
 			if (channelInterceptor instanceof MessageConverterConfigurer.PartitioningInterceptor) {
 				Field partitionHandlerField = ReflectionUtils.findField(
 						MessageConverterConfigurer.PartitioningInterceptor.class,
@@ -164,7 +164,7 @@ public class CustomPartitionedProducerTest {
 		Source testSource = context.getBean(Source.class);
 		DirectChannel messageChannel = (DirectChannel) testSource.output();
 		for (ChannelInterceptor channelInterceptor : messageChannel
-				.getChannelInterceptors()) {
+				.getInterceptors()) {
 			if (channelInterceptor instanceof MessageConverterConfigurer.PartitioningInterceptor) {
 				Field partitionHandlerField = ReflectionUtils.findField(
 						MessageConverterConfigurer.PartitioningInterceptor.class,
@@ -186,16 +186,6 @@ public class CustomPartitionedProducerTest {
 								.equals(CustomPartitionSelectorClass.class)).isTrue();
 			}
 		}
-	}
-
-	@Test(expected = Exception.class)
-	// It actually throws UnsatisfiedDependencyException, but it is confusing when it
-	// comes to test
-	// But for the purposes of the test all we care about is that it fails
-	public void testCustomPartitionedProducerMultipleInstancesFailNoFilter() {
-		SpringApplication.run(
-				CustomPartitionedProducerTest.TestSourceMultipleStrategies.class,
-				"--spring.jmx.enabled=false", "--spring.main.web-application-type=none");
 	}
 
 	@EnableBinding(Source.class)

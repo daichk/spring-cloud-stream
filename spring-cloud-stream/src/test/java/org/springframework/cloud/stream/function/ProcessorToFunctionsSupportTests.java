@@ -1,5 +1,5 @@
 /*
- * Copyright 2019-2019 the original author or authors.
+ * Copyright 2019-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package org.springframework.cloud.stream.function;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -82,6 +83,10 @@ public class ProcessorToFunctionsSupportTests {
 		source.send(new GenericMessage<byte[]>("hello".getBytes(StandardCharsets.UTF_8)));
 		assertThat(target.receive(1000).getPayload())
 				.isEqualTo("HELLO".getBytes(StandardCharsets.UTF_8));
+		//to ensure there is no possibility of load balancing to the EnableBinding
+		source.send(new GenericMessage<byte[]>("hello".getBytes(StandardCharsets.UTF_8)));
+		assertThat(target.receive(1000).getPayload())
+				.isEqualTo("HELLO".getBytes(StandardCharsets.UTF_8));
 	}
 
 	@Test
@@ -97,7 +102,6 @@ public class ProcessorToFunctionsSupportTests {
 		OutputDestination target = this.context.getBean(OutputDestination.class);
 		source.send(new GenericMessage<byte[]>("hello".getBytes(StandardCharsets.UTF_8)));
 		String result = new String(target.receive(1000).getPayload());
-		System.out.println(result);
 		assertThat(result).isEqualTo("HELLO:HELLO");
 	}
 
@@ -130,7 +134,10 @@ public class ProcessorToFunctionsSupportTests {
 
 		@Bean
 		public Function<String, String> toUpperCase() {
-			return String::toUpperCase;
+			return v -> {
+				System.out.println();
+				return v.toUpperCase();
+			};
 		}
 
 		@Bean
@@ -144,11 +151,12 @@ public class ProcessorToFunctionsSupportTests {
 	@Import(BaseProcessorConfiguration.class)
 	public static class ConsumerConfiguration {
 
+		@SuppressWarnings("unchecked")
 		@Bean
 		public Consumer<String> log(OutputDestination out) {
 			return x -> {
 				DirectFieldAccessor dfa = new DirectFieldAccessor(out);
-				MessageChannel channel = (MessageChannel) dfa.getPropertyValue("channel");
+				MessageChannel channel = ((List<MessageChannel>) dfa.getPropertyValue("channels")).get(0);
 				channel.send(new GenericMessage<byte[]>(x.getBytes()));
 			};
 		}

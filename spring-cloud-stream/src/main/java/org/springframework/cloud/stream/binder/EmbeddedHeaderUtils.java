@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 the original author or authors.
+ * Copyright 2014-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@ import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-
-import javax.xml.bind.DatatypeConverter;
 
 import org.springframework.integration.support.json.Jackson2JsonObjectMapper;
 import org.springframework.messaging.Message;
@@ -49,8 +47,7 @@ public abstract class EmbeddedHeaderUtils {
 	private static final Jackson2JsonObjectMapper objectMapper = new Jackson2JsonObjectMapper();
 
 	public static String decodeExceptionMessage(Message<?> requestMessage) {
-		return "Could not convert message: "
-				+ DatatypeConverter.printHexBinary((byte[]) requestMessage.getPayload());
+		return "Could not convert message: " + requestMessage;
 	}
 
 	/**
@@ -59,43 +56,47 @@ public abstract class EmbeddedHeaderUtils {
 	 * @param original original message
 	 * @param headers headers to embedd
 	 * @return a new message
-	 * @throws Exception when message couldn't be generated
 	 */
-	public static byte[] embedHeaders(MessageValues original, String... headers)
-			throws Exception {
-		byte[][] headerValues = new byte[headers.length][];
-		int n = 0;
-		int headerCount = 0;
-		int headersLength = 0;
-		for (String header : headers) {
-			Object value = original.get(header);
-			if (value != null) {
-				String json = objectMapper.toJson(value);
-				headerValues[n] = json.getBytes("UTF-8");
-				headerCount++;
-				headersLength += header.length() + headerValues[n++].length;
+	public static byte[] embedHeaders(MessageValues original, String... headers) {
+		try {
+			byte[][] headerValues = new byte[headers.length][];
+			int n = 0;
+			int headerCount = 0;
+			int headersLength = 0;
+			for (String header : headers) {
+				Object value = original.get(header);
+				if (value != null) {
+					String json = objectMapper.toJson(value);
+					headerValues[n] = json.getBytes("UTF-8");
+					headerCount++;
+					headersLength += header.length() + headerValues[n++].length;
+				}
+				else {
+					headerValues[n++] = null;
+				}
 			}
-			else {
-				headerValues[n++] = null;
+			// 0xff, n(1), [ [lenHdr(1), hdr, lenValue(4), value] ... ]
+			byte[] newPayload = new byte[((byte[]) original.getPayload()).length
+					+ headersLength + headerCount * 5 + 2];
+			ByteBuffer byteBuffer = ByteBuffer.wrap(newPayload);
+			byteBuffer.put((byte) 0xff); // signal new format
+			byteBuffer.put((byte) headerCount);
+			for (int i = 0; i < headers.length; i++) {
+				if (headerValues[i] != null) {
+					byteBuffer.put((byte) headers[i].length());
+					byteBuffer.put(headers[i].getBytes("UTF-8"));
+					byteBuffer.putInt(headerValues[i].length);
+					byteBuffer.put(headerValues[i]);
+				}
 			}
+
+			byteBuffer.put((byte[]) original.getPayload());
+			return byteBuffer.array();
 		}
-		// 0xff, n(1), [ [lenHdr(1), hdr, lenValue(4), value] ... ]
-		byte[] newPayload = new byte[((byte[]) original.getPayload()).length
-				+ headersLength + headerCount * 5 + 2];
-		ByteBuffer byteBuffer = ByteBuffer.wrap(newPayload);
-		byteBuffer.put((byte) 0xff); // signal new format
-		byteBuffer.put((byte) headerCount);
-		for (int i = 0; i < headers.length; i++) {
-			if (headerValues[i] != null) {
-				byteBuffer.put((byte) headers[i].length());
-				byteBuffer.put(headers[i].getBytes("UTF-8"));
-				byteBuffer.putInt(headerValues[i].length);
-				byteBuffer.put(headerValues[i]);
-			}
+		catch (Exception e) {
+			throw new IllegalStateException(e);
 		}
 
-		byteBuffer.put((byte[]) original.getPayload());
-		return byteBuffer.array();
 	}
 
 	/**

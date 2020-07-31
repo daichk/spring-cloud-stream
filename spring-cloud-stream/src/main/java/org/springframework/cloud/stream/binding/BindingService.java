@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2018 the original author or authors.
+ * Copyright 2015-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,12 +21,16 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
+import org.springframework.aop.framework.Advised;
 import org.springframework.beans.BeanUtils;
 import org.springframework.cloud.stream.binder.Binder;
 import org.springframework.cloud.stream.binder.BinderFactory;
@@ -51,10 +55,11 @@ import org.springframework.validation.beanvalidation.CustomValidatorBean;
  * @author Mark Fisher
  * @author Dave Syer
  * @author Marius Bogoevici
- * @author Ilayaperumal Gopinathan
+ * @author Ilayaperumal Gopinathan`
  * @author Gary Russell
  * @author Janne Valkealahti
  * @author Soby Chacko
+ * @author Michael Michailidis
  */
 public class BindingService {
 
@@ -89,8 +94,13 @@ public class BindingService {
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public <T> Collection<Binding<T>> bindConsumer(T input, String inputName) {
 		Collection<Binding<T>> bindings = new ArrayList<>();
+		Class<?> inputClass = input.getClass();
+		if (input instanceof Advised) {
+			inputClass = Stream.of(((Advised) input).getProxiedInterfaces()).filter(c -> !c.getName().contains("org.springframework")).findFirst()
+					.orElse(inputClass);
+		}
 		Binder<T, ConsumerProperties, ?> binder = (Binder<T, ConsumerProperties, ?>) getBinder(
-				inputName, input.getClass());
+				inputName, inputClass);
 		ConsumerProperties consumerProperties = this.bindingServiceProperties
 				.getConsumerProperties(inputName);
 		if (binder instanceof ExtendedPropertiesBinder) {
@@ -116,13 +126,35 @@ public class BindingService {
 			String[] bindingTargets = StringUtils
 					.commaDelimitedListToStringArray(bindingTarget);
 			for (String target : bindingTargets) {
-				Binding<T> binding = input instanceof PollableSource
+				if (!consumerProperties.isPartitioned() || consumerProperties.getInstanceIndexList().isEmpty()) {
+					Binding<T> binding = input instanceof PollableSource
 						? doBindPollableConsumer(input, inputName, binder,
-								consumerProperties, target)
+						consumerProperties, target)
 						: doBindConsumer(input, inputName, binder, consumerProperties,
-								target);
+						target);
 
-				bindings.add(binding);
+					bindings.add(binding);
+				}
+				else {
+					for (Integer index : consumerProperties.getInstanceIndexList()) {
+						if (index < 0) {
+							continue;
+						}
+
+						ConsumerProperties consumerPropertiesTemp = new ExtendedConsumerProperties<>("");
+						BeanUtils.copyProperties(consumerProperties, consumerPropertiesTemp);
+
+						consumerPropertiesTemp.setInstanceIndex(index);
+
+						Binding<T> binding = input instanceof PollableSource
+							? doBindPollableConsumer(input, inputName, binder,
+							consumerPropertiesTemp, target)
+							: doBindConsumer(input, inputName, binder, consumerPropertiesTemp,
+							target);
+
+						bindings.add(binding);
+					}
+				}
 			}
 		}
 		bindings = Collections.unmodifiableCollection(bindings);
@@ -146,9 +178,11 @@ public class BindingService {
 						consumerProperties);
 			}
 			catch (RuntimeException e) {
-				LateBinding<T> late = new LateBinding<T>();
+				LateBinding<T> late = new LateBinding<T>(target,
+						e.getCause() == null ? e.toString() : e.getCause().getMessage(), consumerProperties, true);
 				rescheduleConsumerBinding(input, inputName, binder, consumerProperties,
 						target, late, e);
+				this.consumerBindings.put(inputName, Collections.singletonList(late));
 				return late;
 			}
 		}
@@ -192,7 +226,8 @@ public class BindingService {
 						(PollableSource) input, consumerProperties);
 			}
 			catch (RuntimeException e) {
-				LateBinding<T> late = new LateBinding<T>();
+				LateBinding<T> late = new LateBinding<T>(target,
+						e.getCause() == null ? e.toString() : e.getCause().getMessage(), consumerProperties, true);
 				reschedulePollableConsumerBinding(input, inputName, binder,
 						consumerProperties, target, late, e);
 				return late;
@@ -221,13 +256,17 @@ public class BindingService {
 			}
 		});
 	}
-
 	@SuppressWarnings({ "unchecked", "rawtypes" })
-	public <T> Binding<T> bindProducer(T output, String outputName) {
+	public <T> Binding<T> bindProducer(T output, String outputName, boolean cache) {
 		String bindingTarget = this.bindingServiceProperties
 				.getBindingDestination(outputName);
+		Class<?> outputClass = output.getClass();
+		if (output instanceof Advised) {
+			outputClass = Stream.of(((Advised) output).getProxiedInterfaces()).filter(c -> !c.getName().contains("org.springframework")).findFirst()
+					.orElse(outputClass);
+		}
 		Binder<T, ?, ProducerProperties> binder = (Binder<T, ?, ProducerProperties>) getBinder(
-				outputName, output.getClass());
+				outputName, outputClass);
 		ProducerProperties producerProperties = this.bindingServiceProperties
 				.getProducerProperties(outputName);
 		if (binder instanceof ExtendedPropertiesBinder) {
@@ -242,8 +281,14 @@ public class BindingService {
 		validate(producerProperties);
 		Binding<T> binding = doBindProducer(output, bindingTarget, binder,
 				producerProperties);
-		this.producerBindings.put(outputName, binding);
+		if (cache) {
+			this.producerBindings.put(outputName, binding);
+		}
 		return binding;
+	}
+
+	public <T> Binding<T> bindProducer(T output, String outputName) {
+		return this.bindProducer(output, outputName, true);
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -268,7 +313,8 @@ public class BindingService {
 				return binder.bindProducer(bindingTarget, output, producerProperties);
 			}
 			catch (RuntimeException e) {
-				LateBinding<T> late = new LateBinding<T>();
+				LateBinding<T> late = new LateBinding<T>(bindingTarget,
+						e.getCause() == null ? e.toString() : e.getCause().getMessage(), producerProperties, false);
 				rescheduleProducerBinding(output, bindingTarget, binder,
 						producerProperties, late, e);
 				return late;
@@ -300,6 +346,8 @@ public class BindingService {
 		List<Binding<?>> bindings = this.consumerBindings.remove(inputName);
 		if (bindings != null && !CollectionUtils.isEmpty(bindings)) {
 			for (Binding<?> binding : bindings) {
+				binding.stop();
+				//then
 				binding.unbind();
 			}
 		}
@@ -310,21 +358,15 @@ public class BindingService {
 
 	public void unbindProducers(String outputName) {
 		Binding<?> binding = this.producerBindings.remove(outputName);
+
 		if (binding != null) {
+			binding.stop();
+			//then
 			binding.unbind();
 		}
 		else if (this.log.isWarnEnabled()) {
 			this.log.warn("Trying to unbind '" + outputName + "', but no binding found.");
 		}
-	}
-
-	/**
-	 * Provided for backwards compatibility. Will be removed in a future version.
-	 * @return {@link BindingServiceProperties}
-	 */
-	@Deprecated
-	public BindingServiceProperties getChannelBindingServiceProperties() {
-		return this.bindingServiceProperties;
 	}
 
 	public BindingServiceProperties getBindingServiceProperties() {
@@ -359,14 +401,28 @@ public class BindingService {
 		}
 	}
 
-	private static class LateBinding<T> implements Binding<T> {
+	public static class LateBinding<T> implements Binding<T> {
 
 		private volatile Binding<T> delegate;
 
 		private volatile boolean unbound;
 
-		LateBinding() {
+		private final String error;
+
+		private final String bindingName;
+
+		private final Object consumerOrProducerproperties;
+
+		private final boolean isInput;
+
+		ObjectMapper mapper = new ObjectMapper();
+
+		LateBinding(String bindingName, String error, Object consumerOrProducerproperties, boolean isInput) {
 			super();
+			this.error = error;
+			this.bindingName = bindingName;
+			this.consumerOrProducerproperties = consumerOrProducerproperties;
+			this.isInput = isInput;
 		}
 
 		public synchronized void setDelegate(Binding<T> delegate) {
@@ -387,8 +443,37 @@ public class BindingService {
 		}
 
 		@Override
+		public String getName() {
+			return this.bindingName;
+		}
+
+		@Override
+		public String getBindingName() {
+			return this.bindingName;
+		}
+
+		@SuppressWarnings("unused")
+		public String getError() {
+			return this.error;
+		}
+
+		@Override
 		public String toString() {
 			return "LateBinding [delegate=" + this.delegate + "]";
+		}
+
+		@Override
+		public Map<String, Object> getExtendedInfo() {
+			Map<String, Object> extendedInfo = new LinkedHashMap<>();
+			extendedInfo.put("bindingDestination", this.getBindingName());
+			extendedInfo.put(consumerOrProducerproperties.getClass().getSimpleName(),
+					mapper.convertValue(consumerOrProducerproperties, Map.class));
+			return extendedInfo;
+		}
+
+		@Override
+		public boolean isInput() {
+			return this.isInput;
 		}
 
 	}

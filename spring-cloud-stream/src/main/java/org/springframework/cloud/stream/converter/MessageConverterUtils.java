@@ -16,7 +16,6 @@
 
 package org.springframework.cloud.stream.converter;
 
-import org.springframework.tuple.Tuple;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.MimeType;
@@ -30,12 +29,6 @@ import org.springframework.util.StringUtils;
  * @author Ilayaperumal Gopinathan
  */
 public abstract class MessageConverterUtils {
-
-	/**
-	 * An MimeType specifying a {@link Tuple}.
-	 */
-	public static final MimeType X_SPRING_TUPLE = MimeType
-			.valueOf("application/x-spring-tuple");
 
 	/**
 	 * A general MimeType for Java Types.

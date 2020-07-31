@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.springframework.boot.WebApplicationType;
@@ -29,13 +30,10 @@ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.cloud.stream.annotation.EnableBinding;
 import org.springframework.cloud.stream.annotation.StreamListener;
-import org.springframework.cloud.stream.annotation.StreamMessageConverter;
 import org.springframework.cloud.stream.binder.test.InputDestination;
 import org.springframework.cloud.stream.binder.test.OutputDestination;
 import org.springframework.cloud.stream.binder.test.TestChannelBinder;
 import org.springframework.cloud.stream.binder.test.TestChannelBinderConfiguration;
-import org.springframework.cloud.stream.converter.KryoMessageConverter;
-import org.springframework.cloud.stream.converter.MessageConverterUtils;
 import org.springframework.cloud.stream.messaging.Processor;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -92,26 +90,6 @@ public class ContentTypeTckTests {
 		OutputDestination target = context.getBean(OutputDestination.class);
 		String jsonPayload = "{\"name\":\"oleg\"}";
 		source.send(new GenericMessage<>(jsonPayload.getBytes()));
-		Message<byte[]> outputMessage = target.receive();
-		assertThat(new String(outputMessage.getPayload())).isEqualTo("oleg");
-	}
-
-	@Test
-	// emulates 1.3 behavior
-	public void stringToMapMessageStreamListenerOriginalContentType() {
-		ApplicationContext context = new SpringApplicationBuilder(
-				StringToMapMessageStreamListener.class).web(WebApplicationType.NONE)
-						.run("--spring.jmx.enabled=false");
-		InputDestination source = context.getBean(InputDestination.class);
-		OutputDestination target = context.getBean(OutputDestination.class);
-		String jsonPayload = "{\"name\":\"oleg\"}";
-
-		Message<byte[]> message = MessageBuilder.withPayload(jsonPayload.getBytes())
-				.setHeader(MessageHeaders.CONTENT_TYPE, "text/plain")
-				.setHeader("originalContentType", "application/json;charset=UTF-8")
-				.build();
-
-		source.send(message);
 		Message<byte[]> outputMessage = target.receive();
 		assertThat(new String(outputMessage.getPayload())).isEqualTo("oleg");
 	}
@@ -494,84 +472,6 @@ public class ContentTypeTckTests {
 	}
 
 	@Test
-	@SuppressWarnings("deprecation")
-	public void kryo_pojoToPojo() {
-		ApplicationContext context = new SpringApplicationBuilder(
-				PojoToPojoStreamListener.class).web(WebApplicationType.NONE).run(
-						"--spring.cloud.stream.default.contentType=application/x-java-object",
-						"--spring.jmx.enabled=false");
-		InputDestination source = context.getBean(InputDestination.class);
-		OutputDestination target = context.getBean(OutputDestination.class);
-
-		KryoMessageConverter converter = new KryoMessageConverter(null, true);
-		@SuppressWarnings("unchecked")
-		Message<byte[]> message = (Message<byte[]>) converter.toMessage(
-				new Person("oleg"),
-				new MessageHeaders(Collections.singletonMap(MessageHeaders.CONTENT_TYPE,
-						MessageConverterUtils.X_JAVA_OBJECT)));
-
-		source.send(new GenericMessage<>(message.getPayload()));
-		Message<byte[]> outputMessage = target.receive();
-		assertThat(outputMessage).isNotNull();
-		MimeType contentType = (MimeType) outputMessage.getHeaders()
-				.get(MessageHeaders.CONTENT_TYPE);
-		assertThat(contentType.getSubtype()).isEqualTo("x-java-object");
-		assertThat(contentType.getParameters().get("type"))
-				.isEqualTo(Person.class.getName());
-	}
-
-	@Test
-	@SuppressWarnings("deprecation")
-	public void kryo_pojoToPojoContentTypeHeader() {
-		ApplicationContext context = new SpringApplicationBuilder(
-				PojoToPojoStreamListener.class).web(WebApplicationType.NONE).run(
-						"--spring.jmx.enabled=false",
-						"--spring.cloud.stream.bindings.output.contentType=application/x-java-object");
-		InputDestination source = context.getBean(InputDestination.class);
-		OutputDestination target = context.getBean(OutputDestination.class);
-
-		KryoMessageConverter converter = new KryoMessageConverter(null, true);
-		@SuppressWarnings("unchecked")
-		Message<byte[]> message = (Message<byte[]>) converter.toMessage(
-				new Person("oleg"),
-				new MessageHeaders(Collections.singletonMap(MessageHeaders.CONTENT_TYPE,
-						MessageConverterUtils.X_JAVA_OBJECT)));
-
-		source.send(message);
-		Message<byte[]> outputMessage = target.receive();
-		assertThat(outputMessage).isNotNull();
-		MimeType contentType = (MimeType) outputMessage.getHeaders()
-				.get(MessageHeaders.CONTENT_TYPE);
-		assertThat(contentType.getSubtype()).isEqualTo("x-java-object");
-	}
-
-	/**
-	 * This test simply demonstrates how one can override an existing MessageConverter for
-	 * a given contentType. In this case we are demonstrating how Kryo converter can be
-	 * overriden ('application/x-java-object' maps to Kryo).
-	 */
-	@Test
-	public void overrideMessageConverter_defaultContentTypeBinding() {
-		ApplicationContext context = new SpringApplicationBuilder(
-				StringToStringStreamListener.class, CustomConverters.class)
-						.web(WebApplicationType.NONE)
-						.run("--spring.cloud.stream.default.contentType=application/x-java-object",
-								"--spring.jmx.enabled=false");
-		InputDestination source = context.getBean(InputDestination.class);
-		OutputDestination target = context.getBean(OutputDestination.class);
-		String jsonPayload = "{\"name\":\"oleg\"}";
-		source.send(new GenericMessage<>(jsonPayload.getBytes()));
-		Message<byte[]> outputMessage = target.receive();
-		assertThat(outputMessage).isNotNull();
-		System.out
-				.println(new String(outputMessage.getPayload(), StandardCharsets.UTF_8));
-		assertThat(new String(outputMessage.getPayload(), StandardCharsets.UTF_8))
-				.isEqualTo("AlwaysStringKryoMessageConverter");
-		assertThat(outputMessage.getHeaders().get(MessageHeaders.CONTENT_TYPE))
-				.isEqualTo(MimeType.valueOf("application/x-java-object"));
-	}
-
-	@Test
 	public void customMessageConverter_defaultContentTypeBinding() {
 		ApplicationContext context = new SpringApplicationBuilder(
 				StringToStringStreamListener.class, CustomConverters.class)
@@ -607,6 +507,7 @@ public class ContentTypeTckTests {
 	}
 
 	@Test
+	@Ignore
 	public void _toStringDefaultContentTypePropertyUnknownContentType() {
 		ApplicationContext context = new SpringApplicationBuilder(
 				StringToStringStreamListener.class).web(WebApplicationType.NONE).run(
@@ -1094,13 +995,11 @@ public class ContentTypeTckTests {
 	public static class CustomConverters {
 
 		@Bean
-		@StreamMessageConverter
 		public FooBarMessageConverter fooBarMessageConverter() {
 			return new FooBarMessageConverter(MimeType.valueOf("foo/bar"));
 		}
 
 		@Bean
-		@StreamMessageConverter
 		public AlwaysStringKryoMessageConverter kryoOverrideMessageConverter() {
 			return new AlwaysStringKryoMessageConverter(
 					MimeType.valueOf("application/x-java-object"));

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,13 +18,17 @@ package org.springframework.cloud.stream.converter;
 
 import java.io.IOException;
 import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.springframework.cloud.function.context.catalog.FunctionTypeUtils;
 import org.springframework.core.MethodParameter;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.lang.Nullable;
@@ -44,7 +48,7 @@ import org.springframework.messaging.converter.MessageConversionException;
  */
 class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageConverter {
 
-	private final Map<ParameterizedTypeReference<?>, JavaType> typeCache = new ConcurrentHashMap<>();
+	private final Map<Type, JavaType> typeCache = new ConcurrentHashMap<>();
 
 	ApplicationJsonMessageMarshallingConverter(@Nullable ObjectMapper objectMapper) {
 		if (objectMapper != null) {
@@ -67,8 +71,8 @@ class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageC
 	}
 
 	@Override
-	protected Object convertFromInternal(Message<?> message, Class<?> targetClass,
-			@Nullable Object conversionHint) {
+	protected Object convertFromInternal(Message<?> message, Class<?> targetClass, @Nullable Object hint) {
+		Object conversionHint = hint;
 		Object result = null;
 		if (conversionHint instanceof MethodParameter) {
 			Class<?> conversionHintType = ((MethodParameter) conversionHint)
@@ -87,14 +91,15 @@ class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageC
 				ParameterizedTypeReference<Object> forType = ParameterizedTypeReference
 						.forType(((MethodParameter) conversionHint)
 								.getGenericParameterType());
-				result = convertParameterizedType(message, targetClass, forType);
+				result = convertParameterizedType(message, forType.getType());
 			}
 		}
 		else if (conversionHint instanceof ParameterizedTypeReference) {
-			result = convertParameterizedType(message, targetClass,
-					(ParameterizedTypeReference<?>) conversionHint);
+			result = convertParameterizedType(message, ((ParameterizedTypeReference<?>) conversionHint).getType());
 		}
-
+		else if (conversionHint instanceof ParameterizedType) {
+			result = convertParameterizedType(message, (Type) conversionHint);
+		}
 		if (result == null) {
 			if (message.getPayload() instanceof byte[]
 					&& targetClass.isAssignableFrom(String.class)) {
@@ -109,15 +114,17 @@ class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageC
 		return result;
 	}
 
-	private Object convertParameterizedType(Message<?> message, Class<?> targetClass,
-			ParameterizedTypeReference<?> conversionHint) {
+	private Object convertParameterizedType(Message<?> message, Type conversionHint) {
 		ObjectMapper objectMapper = this.getObjectMapper();
 		Object payload = message.getPayload();
 		try {
 			JavaType type = this.typeCache.get(conversionHint);
 			if (type == null) {
+				conversionHint = FunctionTypeUtils.isMessage(conversionHint)
+						? FunctionTypeUtils.getImmediateGenericType(conversionHint, 0)
+								: conversionHint;
 				type = objectMapper.getTypeFactory()
-						.constructType((conversionHint).getType());
+						.constructType(conversionHint);
 				this.typeCache.put(conversionHint, type);
 			}
 			if (payload instanceof byte[]) {
@@ -127,6 +134,31 @@ class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageC
 				return objectMapper.readValue((String) payload, type);
 			}
 			else {
+				final JavaType typeToUse = type;
+				if (payload instanceof Collection) {
+					Collection<?> collection = ((Collection<?>) payload).stream()
+							.map(value -> {
+								try {
+									if (value instanceof byte[]) {
+										return objectMapper.readValue((byte[]) value, typeToUse.getContentType());
+									}
+									else if (value instanceof String) {
+										return objectMapper.readValue((String) value, typeToUse.getContentType());
+									}
+									else {
+										// fall back to simple type-conversion
+										// see https://github.com/spring-cloud/spring-cloud-stream/issues/1898
+										return objectMapper.convertValue(value, typeToUse.getContentType());
+									}
+								}
+								catch (Exception e) {
+									logger.error("Failed to convert payload " + value, e);
+								}
+								return null;
+							}).collect(Collectors.toList());
+
+					return collection;
+				}
 				return null;
 			}
 		}
@@ -134,5 +166,4 @@ class ApplicationJsonMessageMarshallingConverter extends MappingJackson2MessageC
 			throw new MessageConversionException("Cannot parse payload ", e);
 		}
 	}
-
 }

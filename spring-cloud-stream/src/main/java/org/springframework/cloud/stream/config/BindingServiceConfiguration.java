@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.config.BeanDefinition;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -38,6 +39,7 @@ import org.springframework.cloud.stream.binder.DefaultBinderFactory;
 import org.springframework.cloud.stream.binding.AbstractBindingTargetFactory;
 import org.springframework.cloud.stream.binding.Bindable;
 import org.springframework.cloud.stream.binding.BinderAwareChannelResolver;
+import org.springframework.cloud.stream.binding.BinderAwareRouter;
 import org.springframework.cloud.stream.binding.BindingService;
 import org.springframework.cloud.stream.binding.ContextStartAfterRefreshListener;
 import org.springframework.cloud.stream.binding.DynamicDestinationsBindable;
@@ -77,6 +79,7 @@ import org.springframework.util.ObjectUtils;
  * @author Oleg Zhurakousky
  * @author Soby Chacko
  */
+@SuppressWarnings("deprecation")
 @Configuration
 @EnableConfigurationProperties({ BindingServiceProperties.class,
 		SpringIntegrationProperties.class, StreamFunctionProperties.class })
@@ -86,13 +89,11 @@ import org.springframework.util.ObjectUtils;
 @ConditionalOnBean(value = BinderTypeRegistry.class, search = SearchStrategy.CURRENT)
 public class BindingServiceConfiguration {
 
-	// @checkstyle:off
 	/**
 	 * Name of the Spring Cloud Stream stream listener annotation bean post processor.
 	 */
 	public static final String STREAM_LISTENER_ANNOTATION_BEAN_POST_PROCESSOR_NAME = "streamListenerAnnotationBeanPostProcessor";
 
-	// @checkstyle:on
 
 	@Autowired(required = false)
 	private Collection<DefaultBinderFactory.Listener> binderFactoryListeners;
@@ -147,7 +148,7 @@ public class BindingServiceConfiguration {
 				if (!existingBinderConfigurations.contains(binderEntry.getKey())) {
 					binderConfigurations.put(binderEntry.getKey(),
 							new BinderConfiguration(binderEntry.getKey(), new HashMap<>(),
-									true, true));
+									true, "integration".equals(binderEntry.getKey()) ? false : true));
 				}
 			}
 		}
@@ -241,15 +242,14 @@ public class BindingServiceConfiguration {
 		return new DynamicDestinationsBindable();
 	}
 
-	@SuppressWarnings("deprecation")
 	@Bean
 	@ConditionalOnMissingBean
-	public org.springframework.cloud.stream.binding.BinderAwareRouterBeanPostProcessor binderAwareRouterBeanPostProcessor(
+	public BinderAwareRouter binderAwareRouterBeanPostProcessor(
 			@Autowired(required = false) AbstractMappingMessageRouter[] routers,
-			@Autowired(required = false) DestinationResolver<MessageChannel> channelResolver) {
+			@Autowired(required = false) @Qualifier("binderAwareChannelResolver")
+				DestinationResolver<MessageChannel> channelResolver) {
 
-		return new org.springframework.cloud.stream.binding.BinderAwareRouterBeanPostProcessor(
-				routers, channelResolver);
+		return new BinderAwareRouter(routers, channelResolver);
 	}
 
 	@Bean

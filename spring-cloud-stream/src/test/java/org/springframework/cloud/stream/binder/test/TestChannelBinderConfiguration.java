@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2019 the original author or authors.
+ * Copyright 2017-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,10 +22,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.cloud.stream.annotation.EnableBinding;
 import org.springframework.cloud.stream.binder.Binder;
 import org.springframework.cloud.stream.binder.ConsumerProperties;
 import org.springframework.cloud.stream.binder.ProducerProperties;
+import org.springframework.cloud.stream.config.BinderFactoryAutoConfiguration;
 import org.springframework.cloud.stream.config.BindingServiceConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -40,10 +42,12 @@ import org.springframework.integration.config.EnableIntegration;
  *
  * @param <T> binding type
  * @author Oleg Zhurakousky
+ * @author David Turanski
  * @see TestChannelBinder
  */
 @Configuration
 @ConditionalOnMissingBean(Binder.class)
+@Import(BinderFactoryAutoConfiguration.class)
 @EnableIntegration
 public class TestChannelBinderConfiguration<T> {
 
@@ -74,6 +78,17 @@ public class TestChannelBinderConfiguration<T> {
 			configClasses.addAll(Arrays.asList(additionalConfigurationClasses));
 		}
 		return configClasses.toArray(new Class<?>[] {});
+	}
+
+	/**
+	 * Create an {@link ApplicationContextRunner} with user configuration using {@link #getCompleteConfiguration}.
+	 * @param additionalConfigurationClasses config classes to be added to the default
+	 * config
+	 * @return the ApplicationContextRunner
+	 */
+	public static ApplicationContextRunner applicationContextRunner(Class<?>... additionalConfigurationClasses) {
+		return new ApplicationContextRunner()
+				.withUserConfiguration(getCompleteConfiguration(additionalConfigurationClasses));
 	}
 
 	@Bean

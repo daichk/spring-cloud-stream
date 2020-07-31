@@ -17,11 +17,14 @@
 package org.springframework.cloud.stream.binder;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.validation.constraints.Min;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+
+import org.springframework.messaging.Message;
 
 /**
  * Common consumer properties - spring.cloud.stream.bindings.[destinationName].consumer.
@@ -32,6 +35,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * @author Soby Chacko
  * @author Oleg Zhurakousky
  * @author Nicolas Homble
+ * @author Michael Michailidis
  */
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 public class ConsumerProperties {
@@ -70,6 +74,13 @@ public class ConsumerProperties {
 	 * the one set in 'spring.cloud.stream.instance-index'
 	 */
 	private int instanceIndex = -1;
+
+	/**
+	 * When set it will allow the customization of the consumer to spawn a consumer for
+	 * each item in the list. All negative indexes will be discarded. Default: null
+	 * NOTE: This setting will disable the instance-index
+	 */
+	private List<Integer> instanceIndexList;
 
 	/**
 	 * The number of attempts to process the message (including the first) in the event of
@@ -152,10 +163,18 @@ public class ConsumerProperties {
 	 * By default this property is set to `false` and the binder will individually bind
 	 * each destinations in case of a comma separated multi destination list. The
 	 * individual binder implementations that need to support multiple input bindings
-	 * natively (multiplex) can enable this property. Under normal circumstances, the end
-	 * users are not expected to enable or disable this property directly.
+	 * natively (multiplex) can enable this property.
 	 */
 	private boolean multiplex;
+
+	/**
+	 * When set to true, if the binder supports it, the messages emitted will have a {@link List}
+	 * payload; When used in conjunction with functions, the function can receive a list of
+	 * objects (or {@link Message}s) with the payloads converted if necessary.
+	 *
+	 * @since 3.0
+	 */
+	private boolean batchMode;
 
 	public String getRetryTemplateName() {
 		return retryTemplateName;
@@ -198,6 +217,14 @@ public class ConsumerProperties {
 
 	public void setInstanceIndex(int instanceIndex) {
 		this.instanceIndex = instanceIndex;
+	}
+
+	public List<Integer> getInstanceIndexList() {
+		return this.instanceIndexList;
+	}
+
+	public void setInstanceIndexList(List<Integer> instanceIndexList) {
+		this.instanceIndexList = instanceIndexList;
 	}
 
 	@Min(value = 1, message = "Max attempts should be greater than zero.")
@@ -283,6 +310,14 @@ public class ConsumerProperties {
 
 	public void setAutoStartup(boolean autoStartup) {
 		this.autoStartup = autoStartup;
+	}
+
+	public boolean isBatchMode() {
+		return this.batchMode;
+	}
+
+	public void setBatchMode(boolean batchMode) {
+		this.batchMode = batchMode;
 	}
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014-2017 the original author or authors.
+ * Copyright 2014-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.assertj.core.api.Condition;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import org.springframework.beans.DirectFieldAccessor;
@@ -306,7 +307,7 @@ public abstract class PartitionCapableBinderTests<B extends AbstractTestBinder<?
 	}
 
 	@Test
-	@SuppressWarnings("deprecation")
+	@Ignore
 	public void testPartitionedModuleJava() throws Exception {
 		B binder = getBinder();
 
@@ -334,8 +335,6 @@ public abstract class PartitionCapableBinderTests<B extends AbstractTestBinder<?
 				"testPartitionedModuleJava", input2, consumerProperties);
 
 		PP producerProperties = createProducerProperties();
-		producerProperties.setPartitionKeyExtractorClass(PartitionTestSupport.class);
-		producerProperties.setPartitionSelectorClass(PartitionTestSupport.class);
 		producerProperties.setPartitionCount(3);
 		DirectChannel output = createBindableChannel("output",
 				createProducerBindingProperties(producerProperties));

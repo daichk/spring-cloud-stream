@@ -16,11 +16,15 @@
 
 package org.springframework.cloud.stream.binder.test;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.messaging.Message;
+import org.springframework.util.StringUtils;
 
 /**
  * Implementation of binder endpoint that represents the target destination (e.g.,
@@ -32,17 +36,53 @@ import org.springframework.messaging.Message;
  */
 public class OutputDestination extends AbstractDestination {
 
-	private BlockingQueue<Message<?>> messages;
+	private final Map<String, BlockingQueue<Message<byte[]>>> messageQueues = new LinkedHashMap<>();
 
+	public Message<byte[]> receive(long timeout, String bindingName) {
+		try {
+			bindingName = bindingName.endsWith(".destination") ? bindingName : bindingName + ".destination";
+			return this.messageQueues.get(bindingName).poll(timeout, TimeUnit.MILLISECONDS);
+		}
+		catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+		return null;
+	}
+
+	/**
+	 * Will clear all output destinations.
+	 *
+	 * @since 3.0.6
+	 */
+	public void clear() {
+		this.messageQueues.clear();
+	}
+
+	/**
+	 * Will clear output destination with specified name.
+	 *
+	 * @param destinationName the name of the output destination to be cleared.
+	 * @return true if attempt to clear specific destination is successful otherwise false.
+	 * @since 3.0.6
+	 */
+	public boolean clear(String destinationName) {
+		if (StringUtils.hasText(destinationName) && this.messageQueues.containsKey(destinationName)) {
+			this.messageQueues.clear();
+			return true;
+		}
+		return false;
+	}
 	/**
 	 * Allows to access {@link Message}s received by this {@link OutputDestination}.
 	 * @param timeout how long to wait before giving up
 	 * @return received message
+	 * @deprecated since 3.0.2 in favor of {@link #receive(long, String)} where you should use the actual binding name (e.g., "foo-in-0")
 	 */
-	@SuppressWarnings("unchecked")
-	public Message<byte[]> receive(long timeout) {
+	@Deprecated
+	public Message<byte[]> receive(long timeout, int bindingIndex) {
 		try {
-			return (Message<byte[]>) this.messages.poll(timeout, TimeUnit.MILLISECONDS);
+			BlockingQueue<Message<byte[]>> destinationQueue = (new ArrayList<>(this.messageQueues.values())).get(bindingIndex);
+			return destinationQueue.poll(timeout, TimeUnit.MILLISECONDS);
 		}
 		catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
@@ -55,13 +95,21 @@ public class OutputDestination extends AbstractDestination {
 	 * @return received message
 	 */
 	public Message<byte[]> receive() {
-		return this.receive(0);
+		return this.receive(0, 0);
 	}
 
+	public Message<byte[]> receive(long timeout) {
+		return this.receive(timeout, 0);
+	}
+
+	@SuppressWarnings("unchecked")
 	@Override
-	void afterChannelIsSet() {
-		this.messages = new LinkedTransferQueue<>();
-		this.getChannel().subscribe(message -> this.messages.offer(message));
+	void afterChannelIsSet(int channelIndex, String bindingName) {
+		if (!this.messageQueues.containsKey(bindingName)) {
+			BlockingQueue<Message<byte[]>> messageQueue = new LinkedTransferQueue<>();
+			this.messageQueues.put(bindingName, messageQueue);
+			this.getChannelByName(bindingName).subscribe(message -> this.messageQueues.get(bindingName).offer((Message<byte[]>) message));
+		}
 	}
 
 }

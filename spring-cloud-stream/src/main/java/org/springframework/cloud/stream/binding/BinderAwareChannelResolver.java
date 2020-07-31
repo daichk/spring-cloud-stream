@@ -21,7 +21,6 @@ import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.cloud.stream.binder.Binding;
 import org.springframework.cloud.stream.binder.ProducerProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
-import org.springframework.integration.config.GlobalChannelInterceptorProcessor;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.core.BeanFactoryMessageChannelDestinationResolver;
 import org.springframework.messaging.core.DestinationResolutionException;
@@ -37,7 +36,13 @@ import org.springframework.util.ObjectUtils;
  * @author Gary Russell
  * @author Ilayaperumal Gopinathan
  * @author Oleg Zhurakousky
+ *
+ * @deprecated As of 3.0.0 in favor if providing `spring.cloud.stream.sendto.destination` property.
+ * This is primarily for function-based programming model. For StreamListener it would still be
+ * required and thus will stay until we deprecate and eventually discontinue StreamListener
+ * and annotation-based programming model.
  */
+@Deprecated
 public class BinderAwareChannelResolver
 		extends BeanFactoryMessageChannelDestinationResolver {
 
@@ -55,8 +60,7 @@ public class BinderAwareChannelResolver
 	public BinderAwareChannelResolver(BindingService bindingService,
 			AbstractBindingTargetFactory<? extends MessageChannel> bindingTargetFactory,
 			DynamicDestinationsBindable dynamicDestinationsBindable) {
-		this(bindingService, bindingTargetFactory, dynamicDestinationsBindable, null,
-				null);
+		this(bindingService, bindingTargetFactory, dynamicDestinationsBindable, null);
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -64,28 +68,6 @@ public class BinderAwareChannelResolver
 			AbstractBindingTargetFactory<? extends MessageChannel> bindingTargetFactory,
 			DynamicDestinationsBindable dynamicDestinationsBindable,
 			NewDestinationBindingCallback callback) {
-		this(bindingService, bindingTargetFactory, dynamicDestinationsBindable, callback,
-				null);
-	}
-
-	/**
-	 * @deprecated since GlobalChannelInterceptorProcessor is no longer used
-	 * @param bindingService service to bind inputs and outputs
-	 * @param bindingTargetFactory implementation that restricts the type of binding
-	 * target to a specified class and its supertypes
-	 * @param dynamicDestinationsBindable stores the dynamic destination names and handles
-	 * their unbinding.
-	 * @param callback used to configure a new destination before it is bound.
-	 * @param globalChannelInterceptorProcessor applies global interceptors to message
-	 * channel beans
-	 */
-	@SuppressWarnings("rawtypes")
-	@Deprecated
-	public BinderAwareChannelResolver(BindingService bindingService,
-			AbstractBindingTargetFactory<? extends MessageChannel> bindingTargetFactory,
-			DynamicDestinationsBindable dynamicDestinationsBindable,
-			NewDestinationBindingCallback callback,
-			GlobalChannelInterceptorProcessor globalChannelInterceptorProcessor) {
 		this.dynamicDestinationsBindable = dynamicDestinationsBindable;
 		Assert.notNull(bindingService, "'bindingService' cannot be null");
 		Assert.notNull(bindingTargetFactory, "'bindingTargetFactory' cannot be null");
@@ -126,19 +108,19 @@ public class BinderAwareChannelResolver
 			}
 			else {
 				channel = this.bindingTargetFactory.createOutput(channelName);
-				this.beanFactory.registerSingleton(channelName, channel);
-				channel = (MessageChannel) this.beanFactory.initializeBean(channel,
-						channelName);
+				ProducerProperties producerProperties = bindingServiceProperties
+						.getProducerProperties(channelName);
 				if (this.newBindingCallback != null) {
-					ProducerProperties producerProperties = bindingServiceProperties
-							.getProducerProperties(channelName);
 					Object extendedProducerProperties = this.bindingService
 							.getExtendedProducerProperties(channel, channelName);
 					this.newBindingCallback.configure(channelName, channel,
 							producerProperties, extendedProducerProperties);
-					bindingServiceProperties.updateProducerProperties(channelName,
-							producerProperties);
 				}
+				bindingServiceProperties.updateProducerProperties(channelName,
+						producerProperties);
+				this.beanFactory.registerSingleton(channelName, channel);
+				channel = (MessageChannel) this.beanFactory.initializeBean(channel,
+						channelName);
 				Binding<MessageChannel> binding = this.bindingService
 						.bindProducer(channel, channelName);
 				this.dynamicDestinationsBindable.addOutputBinding(channelName, binding);

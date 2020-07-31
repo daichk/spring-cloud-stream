@@ -16,13 +16,19 @@
 
 package org.springframework.cloud.stream.function;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
-import org.springframework.cloud.stream.messaging.Processor;
+import org.springframework.util.StringUtils;
 
 /**
  * @author Oleg Zhurakousky
  * @author Tolga Kavukcu
+ * @author Soby Chacko
  * @since 2.1
  */
 @ConfigurationProperties("spring.cloud.stream.function")
@@ -30,22 +36,47 @@ public class StreamFunctionProperties {
 
 	/**
 	 * Definition of functions to bind. If several functions need to be composed into one,
-	 * use pipes (e.g., 'fooFunc\|barFunc')
+	 * use pipes (e.g., 'fooFunc|barFunc')
 	 */
 	private String definition;
 
 	private BindingServiceProperties bindingServiceProperties;
 
-	private String inputDestinationName = Processor.INPUT;
+	private Map<String, String> bindings = new HashMap<>();
 
-	private String outputDestinationName = Processor.OUTPUT;
+	private boolean batchMode;
+
+	private boolean composeTo;
+
+	private boolean composeFrom;
+
+	public boolean isComposeTo() {
+		return composeTo;
+	}
+
+	public boolean isComposeFrom() {
+		return composeFrom;
+	}
 
 	public String getDefinition() {
 		return this.definition;
 	}
 
+	public List<String> getOutputBindings(String functionName) {
+		return this.filterBindings(functionName, "-out-");
+	}
+
+	public List<String> getInputBindings(String functionName) {
+		return this.filterBindings(functionName, "-in-");
+	}
+
 	public void setDefinition(String definition) {
-		this.definition = definition;
+		if (StringUtils.hasText(definition)) {
+			this.composeFrom = definition.startsWith("|");
+			this.composeTo = definition.endsWith("|");
+			this.definition = this.composeFrom ? definition.substring(1)
+					: (this.composeTo ? definition.substring(0, definition.length() - 1) : definition);
+		}
 	}
 
 	BindingServiceProperties getBindingServiceProperties() {
@@ -56,20 +87,28 @@ public class StreamFunctionProperties {
 		this.bindingServiceProperties = bindingServiceProperties;
 	}
 
-	String getInputDestinationName() {
-		return this.inputDestinationName;
+	public Map<String, String> getBindings() {
+		return this.bindings;
 	}
 
-	void setInputDestinationName(String inputDestinationName) {
-		this.inputDestinationName = inputDestinationName;
+	public void setBindings(Map<String, String> bindings) {
+		this.bindings = bindings;
 	}
 
-	String getOutputDestinationName() {
-		return this.outputDestinationName;
+	public boolean isBatchMode() {
+		return this.batchMode;
 	}
 
-	void setOutputDestinationName(String outputDestinationName) {
-		this.outputDestinationName = outputDestinationName;
+	public void setBatchMode(boolean batchMode) {
+		this.batchMode = batchMode;
 	}
 
+	private List<String> filterBindings(String functionName, String suffix) {
+		List<String> list = bindings.keySet().stream()
+				.filter(bKey -> bKey.contains(functionName + suffix))
+				.sorted()
+				.map(bKey -> bindings.get(bKey))
+				.collect(Collectors.toList());
+		return list;
+	}
 }

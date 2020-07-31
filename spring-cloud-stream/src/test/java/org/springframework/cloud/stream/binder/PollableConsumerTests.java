@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,13 +35,17 @@ import org.springframework.cloud.stream.config.BindingProperties;
 import org.springframework.cloud.stream.config.BindingServiceProperties;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.Lifecycle;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.integration.IntegrationMessageHeaderAccessor;
 import org.springframework.integration.acks.AcknowledgmentCallback;
 import org.springframework.integration.acks.AcknowledgmentCallback.Status;
+import org.springframework.integration.channel.DirectChannel;
 import org.springframework.integration.context.IntegrationContextUtils;
+import org.springframework.integration.core.MessageSource;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
+import org.springframework.messaging.MessageHandler;
 import org.springframework.messaging.MessageHeaders;
 import org.springframework.messaging.SubscribableChannel;
 import org.springframework.messaging.converter.SmartMessageConverter;
@@ -58,6 +62,7 @@ import static org.mockito.Mockito.verify;
 /**
  * @author Gary Russell
  * @author Oleg Zhurakousky
+ * @author David Turanski
  * @since 2.0
  *
  */
@@ -71,6 +76,28 @@ public class PollableConsumerTests {
 	public void before() {
 		this.messageConverter = new CompositeMessageConverterFactory()
 				.getMessageConverterForAllRegistered();
+	}
+
+	@Test
+	public void testDefaultMessageSource() {
+		TestChannelBinder binder = createBinder();
+		MessageConverterConfigurer configurer = this.context
+				.getBean(MessageConverterConfigurer.class);
+
+		DefaultPollableMessageSource pollableSource = new DefaultPollableMessageSource(
+				this.messageConverter);
+		configurer.configurePolledMessageSource(pollableSource, "foo");
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(
+				null);
+		properties.setMaxAttempts(2);
+		properties.setBackOffInitialInterval(0);
+		binder.bindPollableConsumer("foo", "bar", pollableSource, properties);
+		AtomicInteger count = new AtomicInteger();
+		assertThat(pollableSource.poll(message -> {
+			assertThat(message).isNotNull();
+			count.incrementAndGet();
+		})).isTrue();
+		assertThat(count.get()).isOne();
 	}
 
 	@Test
@@ -392,8 +419,7 @@ public class PollableConsumerTests {
 			}
 
 		});
-		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(
-				null);
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(null);
 		properties.setMaxAttempts(2);
 		properties.setBackOffInitialInterval(0);
 		binder.bindPollableConsumer("foo", "bar", pollableSource, properties);
@@ -409,6 +435,124 @@ public class PollableConsumerTests {
 		}
 		assertThat(count.get()).isEqualTo(2);
 		verify(callback).acknowledge(Status.REQUEUE);
+	}
+
+	@Test
+	public void testRequeueWithNoAcknowledgementCallback() {
+		TestChannelBinder binder = createBinder();
+		MessageConverterConfigurer configurer = this.context
+				.getBean(MessageConverterConfigurer.class);
+
+		DefaultPollableMessageSource pollableSource = new DefaultPollableMessageSource(
+				this.messageConverter);
+		configurer.configurePolledMessageSource(pollableSource, "foo");
+		pollableSource.addInterceptor(new ChannelInterceptor() {
+
+			@Override
+			public Message<?> preSend(Message<?> message, MessageChannel channel) {
+				return MessageBuilder.fromMessage(message)
+						.build();
+			}
+
+		});
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(null);
+		properties.setMaxAttempts(2);
+		properties.setBackOffInitialInterval(0);
+		binder.bindPollableConsumer("foo", "bar", pollableSource, properties);
+		final AtomicInteger count = new AtomicInteger();
+
+		assertThat(pollableSource.poll(received -> {
+			count.incrementAndGet();
+			throw new RequeueCurrentMessageException("test retry");
+		})).isTrue();
+
+		assertThat(count.get()).isEqualTo(2);
+
+	}
+
+	@Test
+	public void testRequeueFromErrorFlow() {
+		TestChannelBinder binder = createBinder();
+		MessageConverterConfigurer configurer = this.context
+				.getBean(MessageConverterConfigurer.class);
+
+		DefaultPollableMessageSource pollableSource = new DefaultPollableMessageSource(
+				this.messageConverter);
+		configurer.configurePolledMessageSource(pollableSource, "foo");
+		AcknowledgmentCallback callback = mock(AcknowledgmentCallback.class);
+		pollableSource.addInterceptor(new ChannelInterceptor() {
+
+			@Override
+			public Message<?> preSend(Message<?> message, MessageChannel channel) {
+				return MessageBuilder.fromMessage(message)
+						.setHeader(
+								IntegrationMessageHeaderAccessor.ACKNOWLEDGMENT_CALLBACK,
+								callback)
+						.build();
+			}
+
+		});
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(null);
+		properties.setMaxAttempts(1);
+		binder.bindPollableConsumer("foo", "bar", pollableSource, properties);
+		SubscribableChannel errorChannel = new DirectChannel();
+		errorChannel.subscribe(msg -> {
+			throw new RequeueCurrentMessageException((Throwable) msg.getPayload());
+		});
+		pollableSource.setErrorChannel(errorChannel);
+		try {
+			pollableSource.poll(received -> {
+				throw new RuntimeException("test requeue from error flow");
+			});
+		}
+		catch (Exception e) {
+			// no op
+		}
+		verify(callback).acknowledge(Status.REQUEUE);
+	}
+
+	@SuppressWarnings("unchecked")
+	@Test
+	public void testAutoStartupOff() {
+		TestChannelBinder binder = createBinder();
+		binder.setMessageSourceDelegate(new LifecycleMessageSource(
+				() -> new GenericMessage<>("{\"foo\":\"bar\"}".getBytes())));
+		MessageConverterConfigurer configurer = this.context
+				.getBean(MessageConverterConfigurer.class);
+
+		DefaultPollableMessageSource pollableSource = new DefaultPollableMessageSource(
+				this.messageConverter);
+		configurer.configurePolledMessageSource(pollableSource, "foo");
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(
+				null);
+		properties.setAutoStartup(false);
+
+		Binding<PollableSource<MessageHandler>> pollableSourceBinding = binder
+				.bindPollableConsumer("foo", "bar", pollableSource, properties);
+
+		assertThat(pollableSourceBinding.isRunning()).isFalse();
+	}
+
+	@SuppressWarnings("unchecked")
+	@Test
+	public void testAutoStartupOn() {
+		TestChannelBinder binder = createBinder();
+		binder.setMessageSourceDelegate(new LifecycleMessageSource(
+				() -> new GenericMessage<>("{\"foo\":\"bar\"}".getBytes())));
+		MessageConverterConfigurer configurer = this.context
+				.getBean(MessageConverterConfigurer.class);
+
+		DefaultPollableMessageSource pollableSource = new DefaultPollableMessageSource(
+				this.messageConverter);
+		configurer.configurePolledMessageSource(pollableSource, "foo");
+		ExtendedConsumerProperties<Object> properties = new ExtendedConsumerProperties<>(
+				null);
+		properties.setAutoStartup(true);
+
+		Binding<PollableSource<MessageHandler>> pollableSourceBinding = binder
+				.bindPollableConsumer("foo", "bar", pollableSource, properties);
+
+		assertThat(pollableSourceBinding.isRunning()).isTrue();
 	}
 
 	private TestChannelBinder createBinder(String... args) {
@@ -431,6 +575,36 @@ public class PollableConsumerTests {
 			this.foo = foo;
 		}
 
+	}
+
+	public static class LifecycleMessageSource<T> implements MessageSource<T>, Lifecycle {
+		private final MessageSource<T> delegate;
+
+		private boolean running = false;
+
+		public LifecycleMessageSource(MessageSource<T> delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public Message<T> receive() {
+			return this.delegate.receive();
+		}
+
+		@Override
+		public void start() {
+			this.running = true;
+		}
+
+		@Override
+		public void stop() {
+			this.running = false;
+		}
+
+		@Override
+		public boolean isRunning() {
+			return this.running;
+		}
 	}
 
 }

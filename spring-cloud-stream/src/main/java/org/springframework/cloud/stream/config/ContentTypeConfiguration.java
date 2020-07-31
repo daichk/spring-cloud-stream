@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 the original author or authors.
+ * Copyright 2017-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,43 +17,55 @@
 package org.springframework.cloud.stream.config;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.cloud.stream.annotation.StreamMessageConverter;
 import org.springframework.cloud.stream.converter.CompositeMessageConverterFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Role;
 import org.springframework.integration.context.IntegrationContextUtils;
-import org.springframework.integration.support.converter.ConfigurableCompositeMessageConverter;
+import org.springframework.messaging.converter.CompositeMessageConverter;
 import org.springframework.messaging.converter.MessageConverter;
 
 /**
  * @author Vinicius Carvalho
  * @author Artem Bilan
+ * @author Oleg Zhurakousky
  */
 @Configuration
 @Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 class ContentTypeConfiguration {
 
-	@Bean
-	public CompositeMessageConverterFactory compositeMessageConverterFactory(
-			ObjectProvider<ObjectMapper> objectMapperObjectProvider,
-			@StreamMessageConverter List<MessageConverter> customMessageConverters) {
-
-		return new CompositeMessageConverterFactory(customMessageConverters,
-				objectMapperObjectProvider.getIfAvailable(ObjectMapper::new));
-	}
-
 	@Bean(name = IntegrationContextUtils.ARGUMENT_RESOLVER_MESSAGE_CONVERTER_BEAN_NAME)
-	public ConfigurableCompositeMessageConverter configurableCompositeMessageConverter(
-			CompositeMessageConverterFactory factory) {
+	public CompositeMessageConverter configurableCompositeMessageConverter(
+			ObjectProvider<ObjectMapper> objectMapperObjectProvider,
+			List<MessageConverter> customMessageConverters) {
 
-		return new ConfigurableCompositeMessageConverter(
-				factory.getMessageConverterForAllRegistered().getConverters());
+		customMessageConverters = customMessageConverters.stream()
+				.filter(c -> isConverterEligible(c)).collect(Collectors.toList());
+
+		CompositeMessageConverterFactory factory =
+				new CompositeMessageConverterFactory(customMessageConverters, objectMapperObjectProvider.getIfAvailable(ObjectMapper::new));
+
+		return factory.getMessageConverterForAllRegistered();
 	}
 
+	/*
+	 * We want to filter out all non-stream MessageConverters, given that other
+	 * auto-configurations may interfere with their MessageConverters.
+	 */
+	private boolean isConverterEligible(Object messageConverter) {
+		String messageConverterName = messageConverter.getClass().getName();
+		if (messageConverterName.startsWith("org.springframework.cloud.")) {
+			return true;
+		}
+		else if (!messageConverterName.startsWith("org.springframework.")) {
+			return true;
+		}
+		return false;
+	}
 }

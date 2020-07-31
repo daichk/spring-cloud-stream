@@ -19,9 +19,6 @@ package org.springframework.cloud.stream.binder;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Supplier;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -29,17 +26,15 @@ import com.fasterxml.jackson.databind.SerializerProvider;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 import org.apache.commons.logging.Log;
-import org.reactivestreams.Publisher;
 
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
+import org.springframework.cloud.stream.config.ConsumerEndpointCustomizer;
 import org.springframework.cloud.stream.config.ListenerContainerCustomizer;
 import org.springframework.cloud.stream.config.MessageSourceCustomizer;
-import org.springframework.cloud.stream.function.IntegrationFlowFunctionSupport;
-import org.springframework.cloud.stream.function.StreamFunctionProperties;
+import org.springframework.cloud.stream.config.ProducerMessageHandlerCustomizer;
 import org.springframework.cloud.stream.provisioning.ConsumerDestination;
 import org.springframework.cloud.stream.provisioning.ProducerDestination;
 import org.springframework.cloud.stream.provisioning.ProvisioningException;
@@ -52,14 +47,10 @@ import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.expression.Expression;
 import org.springframework.integration.channel.AbstractMessageChannel;
 import org.springframework.integration.channel.AbstractSubscribableChannel;
-import org.springframework.integration.channel.DirectChannel;
-import org.springframework.integration.channel.MessageChannelReactiveUtils;
 import org.springframework.integration.channel.PublishSubscribeChannel;
 import org.springframework.integration.context.IntegrationContextUtils;
 import org.springframework.integration.core.MessageProducer;
 import org.springframework.integration.core.MessageSource;
-import org.springframework.integration.dsl.IntegrationFlowBuilder;
-import org.springframework.integration.dsl.IntegrationFlows;
 import org.springframework.integration.handler.AbstractMessageHandler;
 import org.springframework.integration.handler.BridgeHandler;
 import org.springframework.integration.handler.advice.ErrorMessageSendingRecoverer;
@@ -73,7 +64,6 @@ import org.springframework.messaging.SubscribableChannel;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.retry.RecoveryCallback;
 import org.springframework.util.Assert;
-import org.springframework.util.StringUtils;
 
 /**
  * {@link AbstractBinder} that serves as base class for {@link MessageChannel} binders.
@@ -87,31 +77,28 @@ import org.springframework.util.StringUtils;
  * @param <C> the consumer properties type
  * @param <P> the producer properties type
  * @param <PP> the provisioning producer properties type
+ *
  * @author Marius Bogoevici
  * @author Ilayaperumal Gopinathan
  * @author Soby Chacko
  * @author Oleg Zhurakousky
  * @author Artem Bilan
  * @author Gary Russell
+ *
  * @since 1.1
  */
-// @checkstyle:off
 public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties, P extends ProducerProperties, PP extends ProvisioningProvider<C, P>>
 		extends AbstractBinder<MessageChannel, C, P> implements
 		PollableConsumerBinder<MessageHandler, C>, ApplicationEventPublisherAware {
 
-	// @checkstyle:on
 
 	/**
 	 * {@link ProvisioningProvider} delegated by the downstream binder implementations.
 	 */
 	protected final PP provisioningProvider;
 
-	// @checkstyle:off
 	private final EmbeddedHeadersChannelInterceptor embeddedHeadersChannelInterceptor = new EmbeddedHeadersChannelInterceptor(
 			this.logger);
-
-	// @checkstyle:on
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -123,28 +110,19 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 
 	private final ListenerContainerCustomizer<?> containerCustomizer;
 
-	private MessageSourceCustomizer<?> sourceCustomizer;
+	private final MessageSourceCustomizer<?> sourceCustomizer;
+
+	private ProducerMessageHandlerCustomizer<MessageHandler> handlerCustomizer =
+		(handler, destination) -> { };
+
+	private ConsumerEndpointCustomizer<MessageProducer> consumerCustomizer =
+		(adapter, destination, group) -> { };
 
 	private ApplicationEventPublisher applicationEventPublisher;
 
-	@Autowired(required = false)
-	private IntegrationFlowFunctionSupport integrationFlowFunctionSupport;
-
-	@Autowired(required = false)
-	private StreamFunctionProperties streamFunctionProperties;
-
-	private boolean producerBindingExist;
-
 	public AbstractMessageChannelBinder(String[] headersToEmbed,
 			PP provisioningProvider) {
-		this(headersToEmbed, provisioningProvider, null);
-	}
-
-	@Deprecated
-	public AbstractMessageChannelBinder(String[] headersToEmbed, PP provisioningProvider,
-			ListenerContainerCustomizer<?> containerCustomizer) {
-
-		this(headersToEmbed, provisioningProvider, containerCustomizer, null);
+		this(headersToEmbed, provisioningProvider, null, null);
 	}
 
 	public AbstractMessageChannelBinder(String[] headersToEmbed, PP provisioningProvider,
@@ -171,6 +149,38 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 	public void setApplicationEventPublisher(
 			ApplicationEventPublisher applicationEventPublisher) {
 		this.applicationEventPublisher = applicationEventPublisher;
+	}
+
+	/**
+	 * Configure an optional {@link ProducerMessageHandlerCustomizer} for further
+	 * configuration of producer {@link MessageHandler} instances created by the binder.
+	 * @param handlerCustomizer the {@link ProducerMessageHandlerCustomizer} to use.
+	 * @since 3.0
+	 */
+	@SuppressWarnings("unchecked")
+	public void setProducerMessageHandlerCustomizer(
+		@Nullable ProducerMessageHandlerCustomizer<? extends MessageHandler> handlerCustomizer) {
+
+		this.handlerCustomizer =
+			handlerCustomizer == null
+				? (handler, destination) -> { }
+				: (ProducerMessageHandlerCustomizer<MessageHandler>) handlerCustomizer;
+	}
+
+	/**
+	 * Configure an optional {@link ConsumerEndpointCustomizer} for further
+	 * configuration of consumer {@link MessageProducer} instances created by the binder.
+	 * @param endpointCustomizer the {@link ConsumerEndpointCustomizer} to use.
+	 * @since 3.0
+	 */
+	@SuppressWarnings("unchecked")
+	public void setConsumerEndpointCustomizer(
+		@Nullable ConsumerEndpointCustomizer<? extends MessageProducer> endpointCustomizer) {
+
+		this.consumerCustomizer =
+				endpointCustomizer == null
+				? (handler, destination, group) -> { }
+				: (ConsumerEndpointCustomizer<MessageProducer>) endpointCustomizer;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -214,6 +224,7 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 					? registerErrorInfrastructure(producerDestination) : null;
 			producerMessageHandler = createProducerMessageHandler(producerDestination,
 					producerProperties, outputChannel, errorChannel);
+			customizeProducerMessageHandler(producerMessageHandler, producerDestination.getName());
 			if (producerMessageHandler instanceof InitializingBean) {
 				((InitializingBean) producerMessageHandler).afterPropertiesSet();
 			}
@@ -236,11 +247,6 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 			((Lifecycle) producerMessageHandler).start();
 		}
 		this.postProcessOutputChannel(outputChannel, producerProperties);
-
-		if (shouldWireDunctionToChannel(true)) {
-			outputChannel = this.postProcessOutboundChannelForFunction(outputChannel,
-					producerProperties);
-		}
 
 		((SubscribableChannel) outputChannel)
 				.subscribe(new SendingHandler(producerMessageHandler,
@@ -279,15 +285,18 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 		};
 
 		doPublishEvent(new BindingCreatedEvent(binding));
-		this.producerBindingExist = true;
 		return binding;
+	}
+
+	private void customizeProducerMessageHandler(MessageHandler producerMessageHandler, String destinationName) {
+		this.handlerCustomizer.configure(producerMessageHandler, destinationName);
 	}
 
 	/**
 	 * Whether the producer for the destination being created should be configured to use
 	 * native encoding which may, or may not, be determined from the properties. For
 	 * example, a transactional kafka binder uses a common producer for all destinations.
-	 * The default implementation returns {@link P#isUseNativeEncoding()}.
+	 * The default implementation returns {@link ProducerProperties#isUseNativeEncoding()}.
 	 * @param producerProperties the properties.
 	 * @return true to use native encoding.
 	 */
@@ -391,16 +400,13 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 		try {
 			ConsumerDestination destination = this.provisioningProvider
 					.provisionConsumerDestination(name, group, properties);
-			// the function support for the inbound channel is only for Sink
-			if (shouldWireDunctionToChannel(false)) {
-				inputChannel = this.postProcessInboundChannelForFunction(inputChannel,
-						properties);
-			}
+
 			if (HeaderMode.embeddedHeaders.equals(properties.getHeaderMode())) {
 				enhanceMessageChannel(inputChannel);
 			}
 			consumerEndpoint = createConsumerEndpoint(destination, group, properties);
 			consumerEndpoint.setOutputChannel(inputChannel);
+			this.consumerCustomizer.configure(consumerEndpoint, name, group);
 			if (consumerEndpoint instanceof InitializingBean) {
 				((InitializingBean) consumerEndpoint).afterPropertiesSet();
 			}
@@ -493,7 +499,7 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 					resources.getErrorInfrastructure(), properties));
 		}
 		postProcessPollableSource(bindingTarget);
-		if (resources.getSource() instanceof Lifecycle) {
+		if (properties.isAutoStartup() && resources.getSource() instanceof Lifecycle) {
 			((Lifecycle) resources.getSource()).start();
 		}
 		Binding<PollableSource<MessageHandler>> binding = new DefaultBinding<PollableSource<MessageHandler>>(
@@ -654,7 +660,9 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 			errorChannel = (SubscribableChannel) errorChannelObject;
 		}
 		else {
-			errorChannel = new BinderErrorChannel();
+			BinderErrorChannel binderErrorChannel = new BinderErrorChannel();
+			binderErrorChannel.setComponentName(errorChannelName);
+			errorChannel = binderErrorChannel;
 
 			((GenericApplicationContext) getApplicationContext()).registerBean(
 					errorChannelName, SubscribableChannel.class, () -> errorChannel);
@@ -806,7 +814,7 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 	}
 
 	private void destroyBean(String beanName) {
-		if (getApplicationContext().containsBean(beanName)) {
+		if (getApplicationContext().containsBeanDefinition(beanName)) {
 			((DefaultSingletonBeanRegistry) getApplicationContext().getBeanFactory())
 					.destroySingleton(beanName);
 			((GenericApplicationContext) getApplicationContext())
@@ -906,85 +914,6 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 			this.applicationEventPublisher.publishEvent(event);
 		}
 	}
-
-	/*
-	 * FUNCTION-TO-EXISTING-APP section
-	 *
-	 * To support composing functions into the existing apps. These methods do/should not
-	 * participate in any way with general function bootstrap (e.g. brand new function
-	 * based app). For that please see FunctionConfiguration.integrationFlowCreator
-	 */
-	private boolean shouldWireDunctionToChannel(boolean producer) {
-		if (!producer && this.producerBindingExist) {
-			return false;
-		}
-		else {
-			return this.streamFunctionProperties != null
-					&& StringUtils.hasText(this.streamFunctionProperties.getDefinition())
-					&& (!this.getApplicationContext()
-							.containsBean("integrationFlowCreator")
-							|| this.getApplicationContext()
-									.getBean("integrationFlowCreator").equals(null));
-		}
-	}
-
-	private SubscribableChannel postProcessOutboundChannelForFunction(
-			MessageChannel outputChannel, ProducerProperties producerProperties) {
-		if (this.integrationFlowFunctionSupport != null) {
-			Publisher<?> publisher = MessageChannelReactiveUtils
-					.toPublisher(outputChannel);
-			// If the app has an explicit Supplier bean defined, make that as the
-			// publisher
-			if (this.integrationFlowFunctionSupport.containsFunction(Supplier.class)) {
-				IntegrationFlowBuilder integrationFlowBuilder = IntegrationFlows
-						.from(outputChannel).bridge();
-				publisher = integrationFlowBuilder.toReactivePublisher();
-			}
-			if (this.integrationFlowFunctionSupport.containsFunction(Function.class,
-					this.streamFunctionProperties.getDefinition())) {
-				DirectChannel actualOutputChannel = new DirectChannel();
-				if (outputChannel instanceof AbstractMessageChannel) {
-					moveChannelInterceptors((AbstractMessageChannel) outputChannel,
-							actualOutputChannel);
-				}
-				this.integrationFlowFunctionSupport.andThenFunction(publisher,
-						actualOutputChannel, this.streamFunctionProperties);
-				return actualOutputChannel;
-			}
-		}
-		return (SubscribableChannel) outputChannel;
-	}
-
-	private SubscribableChannel postProcessInboundChannelForFunction(
-			MessageChannel inputChannel, ConsumerProperties consumerProperties) {
-		if (this.integrationFlowFunctionSupport != null
-				&& (this.integrationFlowFunctionSupport.containsFunction(Consumer.class)
-						|| this.integrationFlowFunctionSupport
-								.containsFunction(Function.class))) {
-			DirectChannel actualInputChannel = new DirectChannel();
-			if (inputChannel instanceof AbstractMessageChannel) {
-				moveChannelInterceptors((AbstractMessageChannel) inputChannel,
-						actualInputChannel);
-			}
-
-			this.integrationFlowFunctionSupport.andThenFunction(
-					MessageChannelReactiveUtils.toPublisher(actualInputChannel),
-					inputChannel, this.streamFunctionProperties);
-			return actualInputChannel;
-		}
-		return (SubscribableChannel) inputChannel;
-	}
-
-	private void moveChannelInterceptors(AbstractMessageChannel existingMessageChannel,
-			AbstractMessageChannel actualMessageChannel) {
-		for (ChannelInterceptor channelInterceptor : existingMessageChannel
-				.getChannelInterceptors()) {
-			actualMessageChannel.addInterceptor(channelInterceptor);
-			existingMessageChannel.removeInterceptor(channelInterceptor);
-		}
-	}
-
-	// END FUNCTION-TO-EXISTING-APP section
 
 	protected static class ErrorInfrastructure {
 
@@ -1100,16 +1029,14 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 		}
 
 		@Override
-		protected void handleMessageInternal(Message<?> message) throws Exception {
+		protected void handleMessageInternal(Message<?> message) {
 			Message<?> messageToSend = (this.useNativeEncoding) ? message
 					: serializeAndEmbedHeadersIfApplicable(message);
 			this.delegate.handleMessage(messageToSend);
 		}
 
-		@SuppressWarnings("deprecation")
-		private Message<?> serializeAndEmbedHeadersIfApplicable(Message<?> message)
-				throws Exception {
-			MessageValues transformed = serializePayloadIfNecessary(message);
+		private Message<?> serializeAndEmbedHeadersIfApplicable(Message<?> message) {
+			MessageValues transformed = new MessageValues(message);
 			Object payload;
 			if (this.embedHeaders) {
 				Object contentType = transformed.get(MessageHeaders.CONTENT_TYPE);
@@ -1117,12 +1044,6 @@ public abstract class AbstractMessageChannelBinder<C extends ConsumerProperties,
 				// embedded in JSON
 				if (contentType != null) {
 					transformed.put(MessageHeaders.CONTENT_TYPE, contentType.toString());
-				}
-				Object originalContentType = transformed
-						.get(BinderHeaders.BINDER_ORIGINAL_CONTENT_TYPE);
-				if (originalContentType != null) {
-					transformed.put(BinderHeaders.BINDER_ORIGINAL_CONTENT_TYPE,
-							originalContentType.toString());
 				}
 				payload = EmbeddedHeaderUtils.embedHeaders(transformed,
 						this.embeddedHeaders);

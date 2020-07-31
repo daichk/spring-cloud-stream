@@ -34,9 +34,7 @@ import org.springframework.util.StringUtils;
 
 /**
  * @author Oleg Zhurakousky
- * @deprecated will be removed once https://jira.spring.io/browse/SPR-17503 is addressed
  */
-@Deprecated
 class SmartMessageMethodArgumentResolver extends MessageMethodArgumentResolver {
 
 	private final MessageConverter messageConverter;
@@ -75,6 +73,9 @@ class SmartMessageMethodArgumentResolver extends MessageMethodArgumentResolver {
 		}
 		Object payload = message.getPayload();
 		if (isEmptyPayload(payload)) {
+			if (isExplicitNullPayload(payload)) {
+				return message;
+			}
 			throw new MessageConversionException(message,
 					"Cannot convert from actual payload type '"
 							+ ClassUtils.getDescriptiveType(payload)
@@ -99,6 +100,7 @@ class SmartMessageMethodArgumentResolver extends MessageMethodArgumentResolver {
 		return resolvableType.getGeneric().toClass();
 	}
 
+	@Override
 	protected boolean isEmptyPayload(@Nullable Object payload) {
 		if (payload == null) {
 			return true;
@@ -110,8 +112,13 @@ class SmartMessageMethodArgumentResolver extends MessageMethodArgumentResolver {
 			return !StringUtils.hasText((String) payload);
 		}
 		else {
-			return false;
+			return "org.springframework.kafka.support.KafkaNull".equals(payload.getClass().getName());
 		}
+	}
+
+	protected boolean isExplicitNullPayload(@Nullable Object payload) {
+		return "org.springframework.kafka.support.KafkaNull"
+						.equals(payload.getClass().getName());
 	}
 
 	private Object convertPayload(Message<?> message, MethodParameter parameter,

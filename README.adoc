@@ -4,6 +4,7 @@ Manual changes to this file will be lost when it is generated again.
 Edit the files in the src/main/asciidoc/ directory instead.
 ////
 
+
 :jdkversion: 1.8
 :github-tag: master
 :github-repo: spring-cloud/spring-cloud-stream
@@ -28,12 +29,13 @@ To extend this to Data Integration workloads, Spring Integration and Spring Boot
 
 [%hardbreaks]
 With Spring Cloud Stream, developers can:
-* Build, test, iterate, and deploy data-centric applications in isolation.
-* Apply modern microservices architecture patterns, including composition through messaging.
-* Decouple application responsibilities with event-centric thinking. An event can represent something that has happened in time, to which the downstream consumer applications can react without knowing where it originated or the producer's identity.
-* Port the business logic onto message brokers (such as RabbitMQ, Apache Kafka, Amazon Kinesis).
-* Interoperate between channel-based and non-channel-based application binding scenarios to support stateless and stateful computations by using Project Reactor's Flux and Kafka Streams APIs.
-* Rely on the framework's automatic content-type support for common use-cases. Extending to different data conversion types is possible.
+
+- Build, test and deploy data-centric applications in isolation.
+- Apply modern microservices architecture patterns, including composition through messaging.
+- Decouple application responsibilities with event-centric thinking. An event can represent something that has happened in time, to which the downstream consumer applications can react without knowing where it originated or the producer's identity.
+- Port the business logic onto message brokers (such as RabbitMQ, Apache Kafka, Amazon Kinesis).
+- Rely on the framework's automatic content-type support for common use-cases. Extending to different data conversion types is possible.
+- and many more. . .
 
 === Quick Start
 
@@ -105,39 +107,40 @@ Modify the `com.example.loggingconsumer.LoggingConsumerApplication` class to loo
 [source, java]
 ----
 @SpringBootApplication
-@EnableBinding(Sink.class)
 public class LoggingConsumerApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(LoggingConsumerApplication.class, args);
-	}
+    public static void main(String[] args) {
+        SpringApplication.run(LoggingConsumerApplication.class, args);
+    }
 
-	@StreamListener(Sink.INPUT)
-	public void handle(Person person) {
-		System.out.println("Received: " + person);
-	}
+    @Bean
+    public Consumer<Person> log() {
+        return person -> {
+            System.out.println("Received: " + person);
+        };
+    }
 
-	public static class Person {
-		private String name;
-		public String getName() {
-			return name;
-		}
-		public void setName(String name) {
-			this.name = name;
-		}
-		public String toString() {
-			return this.name;
-		}
-	}
+    public static class Person {
+        private String name;
+        public String getName() {
+            return name;
+        }
+        public void setName(String name) {
+            this.name = name;
+        }
+        public String toString() {
+            return this.name;
+        }
+    }
 }
 ----
 
 As you can see from the preceding listing:
 
-* We have enabled `Sink` binding (input-no-output) by using `@EnableBinding(Sink.class)`.
-Doing so signals to the framework to initiate binding to the messaging middleware, where it automatically creates the destination (that is, queue, topic, and others) that are bound to the `Sink.INPUT` channel.
-* We have added a `handler` method to receive incoming messages of type `Person`.
-Doing so lets you see one of the core features of the framework: It tries to automatically convert incoming message payloads to type `Person`.
+* We are using functional programming model (see <<Spring Cloud Function support>>) to define a single message handler as `Consumer`.
+* We are relying on framework conventions to bind such handler to the input destination binding exposed by the binder.
+
+Doing so also lets you see one of the core features of the framework: It tries to automatically convert incoming message payloads to type `Person`.
 
 You now have a fully functional Spring Cloud Stream application that does listens for messages.
 From here, for simplicity, we assume you selected RabbitMQ in <<spring-cloud-stream-preface-creating-sample-application,step one>>.
@@ -147,13 +150,13 @@ You should see following output:
 
 [source]
 ----
-	--- [ main] c.s.b.r.p.RabbitExchangeQueueProvisioner : declaring queue for inbound: input.anonymous.CbMIwdkJSBO1ZoPDOtHtCg, bound to: input
-	--- [ main] o.s.a.r.c.CachingConnectionFactory       : Attempting to connect to: [localhost:5672]
-	--- [ main] o.s.a.r.c.CachingConnectionFactory       : Created new connection: rabbitConnectionFactory#2a3a299:0/SimpleConnection@66c83fc8. . .
-	. . .
-	--- [ main] o.s.i.a.i.AmqpInboundChannelAdapter      : started inbound.input.anonymous.CbMIwdkJSBO1ZoPDOtHtCg
-	. . .
-	--- [ main] c.e.l.LoggingConsumerApplication         : Started LoggingConsumerApplication in 2.531 seconds (JVM running for 2.897)
+    --- [ main] c.s.b.r.p.RabbitExchangeQueueProvisioner : declaring queue for inbound: input.anonymous.CbMIwdkJSBO1ZoPDOtHtCg, bound to: input
+    --- [ main] o.s.a.r.c.CachingConnectionFactory       : Attempting to connect to: [localhost:5672]
+    --- [ main] o.s.a.r.c.CachingConnectionFactory       : Created new connection: rabbitConnectionFactory#2a3a299:0/SimpleConnection@66c83fc8. . .
+    . . .
+    --- [ main] o.s.i.a.i.AmqpInboundChannelAdapter      : started inbound.input.anonymous.CbMIwdkJSBO1ZoPDOtHtCg
+    . . .
+    --- [ main] c.e.l.LoggingConsumerApplication         : Started LoggingConsumerApplication in 2.531 seconds (JVM running for 2.897)
 ----
 
 Go to the RabbitMQ management console or any other RabbitMQ client and send a message to `input.anonymous.CbMIwdkJSBO1ZoPDOtHtCg`.
@@ -172,35 +175,32 @@ You can also build and package your application into a boot jar (by using `./mvn
 
 Now you have a working (albeit very basic) Spring Cloud Stream application.
 
-== What's New in 2.2?
-Spring Cloud Stream introduces a number of new features, enhancements, and changes in addition to the once already introduced in
-https://docs.spring.io/spring-cloud-stream/docs/Elmhurst.SR2/reference/htmlsingle/#_what_s_new_in_2_0[version 2.0]
+== What's New in 3.0?
 
-
-The following sections outline the most notable ones:
-
-* <<spring-cloud-stream-preface-new-features>>
-* <<spring-cloud-stream-preface-notable-enhancements>>
 
 [[spring-cloud-stream-preface-new-features]]
-=== New Features and Components
+=== New Features and Enhancements
 
-
-[[spring-cloud-stream-preface-notable-enhancements]]
-=== Notable Enhancements
+- *Routing Function* - see <<Routing with functions>> for more details.
+- *Multiple bindings with functions* (multiple message handlers) - see <<Multiple functions in a single application>> for more details.
+- *Functions with multiple inputs/outputs* (single function that can subscribe or target multiple destinations) - see <<Functions with multiple input and output arguments>> for more details.
+- *Native support for reactive programming* - since v3.0.0 we no longer distribute spring-cloud-stream-reactive modules and instead
+relying on native reactive support provided by spring cloud function. For backward
+compatibility you can still bring `spring-cloud-stream-reactive` from previous versions.
 
 
 [[spring-cloud-stream-preface-notable-deprecations]]
 === Notable Deprecations
 
-As of version 2.2, the following items have been deprecated:
-
-- The spring-cloud-stream-reactive module is deprecated in favor of native support
-  via <<spring_cloud_function, Spring Cloud Function>> programming model.
-
-=== Notes on migrating from 1.x to 2.x?
-- Due to the improvements in content-type negotiation, the `originalContentType` header is not used (ignored) since 2.x and only exists for maintaining compatibility with 1.x versions
-- Introduction of `@StreamRetryTemplate` qualifier. While configuring custom instance of the `RetryTemplate` and to avoid conflicts you must qualify the instance of such `RetryTemplate` with this qualifier. See <<Retry Template, Retry Template>> for more details.
+- _Reactive module_ (`spring-cloud-stream-reactive`) is discontinued and no longer distributed in favor of native support via spring-cloud-function.
+For backward
+compatibility you can still bring `spring-cloud-stream-reactive` from previous versions.
+- _Test support binder_ `spring-cloud-stream-test-support` with MessageCollector in favor of a new test binder. See <<Testing>> for more details.
+- _@StreamMessageConverter_ - deprecated as it is no longer required.
+- The `original-content-type` header references have been removed after it's been deprecated in v2.0.
+- The `BinderAwareChannelResolver` is deprecated in favor if providing `spring.cloud.stream.sendto.destination` property.
+This is primarily for function-based programming model. For StreamListener it would still be required and thus will stay until we deprecate and eventually discontinue StreamListener
+and annotation-based programming model.
 
 = Appendices
 [appendix]

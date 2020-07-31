@@ -16,7 +16,9 @@
 
 package org.springframework.cloud.stream.config;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -49,13 +51,21 @@ import org.springframework.util.Assert;
  * @author Gary Russell
  * @author Ilayaperumal Gopinathan
  * @author Oleg Zhurakousky
+ * @author Michael Michailidis
  */
 @ConfigurationProperties("spring.cloud.stream")
 @JsonInclude(Include.NON_DEFAULT)
 public class BindingServiceProperties
-		implements ApplicationContextAware, InitializingBean {
+	implements ApplicationContextAware, InitializingBean {
 
 	private static final int DEFAULT_BINDING_RETRY_INTERVAL = 30;
+
+	/**
+	 *  A colon delimited string representing the names of the sources based on which source bindings will be created.
+	 *  This is primarily to support cases where source binding may be required without providing a corresponding Supplier.
+	 *  (e.g., for cases where the actual source of data is outside of scope of spring-cloud-stream - HTTP -> Stream)
+	 */
+	private String source;
 
 	/**
 	 * The instance id of the application: a number from 0 to instanceCount-1. Used for
@@ -65,6 +75,15 @@ public class BindingServiceProperties
 	 */
 	@Value("${INSTANCE_INDEX:${CF_INSTANCE_INDEX:0}}")
 	private int instanceIndex;
+
+	/**
+	 * A list of instance id's from 0 to instanceCount-1. Used for partitioning and with
+	 * Kafka. NOTE: Could also be managed per individual binding
+	 * "spring.cloud.stream.bindings.foo.consumer.instance-index-list" where 'foo' is
+	 * the name of the binding. This setting will override the one set in
+	 * 'spring.cloud.stream.instance-index'
+	 */
+	private List<Integer> instanceIndexList = new ArrayList<>();
 
 	/**
 	 * The number of deployed instances of an application. Default: 1. NOTE: Could also be
@@ -82,7 +101,7 @@ public class BindingServiceProperties
 	 * application: 'spring.cloud.stream.bindings.input.contentType=text/plain'
 	 */
 	private Map<String, BindingProperties> bindings = new TreeMap<>(
-			String.CASE_INSENSITIVE_ORDER);
+		String.CASE_INSENSITIVE_ORDER);
 
 	/**
 	 * Additional per-binder properties (see {@link BinderProperties}) if more then one
@@ -104,6 +123,13 @@ public class BindingServiceProperties
 	 * destinations can be bound.
 	 */
 	private String[] dynamicDestinations = new String[0];
+
+	/**
+	 * The maximum size of Least Recently Used (LRU) cache of dynamic destinations. Once
+	 * this size is reached, new destinations will trigger the removal of old destinations.
+	 * Default: 10
+	 */
+	private int dynamicDestinationCacheSize = 10;
 
 	/**
 	 * Retry interval (in seconds) used to schedule binding attempts. Default: 30 sec.
@@ -144,6 +170,14 @@ public class BindingServiceProperties
 
 	public void setInstanceIndex(int instanceIndex) {
 		this.instanceIndex = instanceIndex;
+	}
+
+	public List<Integer> getInstanceIndexList() {
+		return this.instanceIndexList;
+	}
+
+	public void setInstanceIndexList(List<Integer> instanceIndexList) {
+		this.instanceIndexList = instanceIndexList;
 	}
 
 	public int getInstanceCount() {
@@ -226,6 +260,9 @@ public class BindingServiceProperties
 		if (consumerProperties.getInstanceIndex() < 0) {
 			consumerProperties.setInstanceIndex(this.instanceIndex);
 		}
+		if (consumerProperties.getInstanceIndexList() == null) {
+			consumerProperties.setInstanceIndexList(this.instanceIndexList);
+		}
 		return consumerProperties;
 	}
 
@@ -265,11 +302,27 @@ public class BindingServiceProperties
 		this.bindingRetryInterval = bindingRetryInterval;
 	}
 
+	public String getSource() {
+		return source;
+	}
+
+	public void setSource(String source) {
+		this.source = source;
+	}
+
 	public void updateProducerProperties(String bindingName,
 			ProducerProperties producerProperties) {
 		if (this.bindings.containsKey(bindingName)) {
 			this.bindings.get(bindingName).setProducer(producerProperties);
 		}
+	}
+
+	public int getDynamicDestinationCacheSize() {
+		return dynamicDestinationCacheSize;
+	}
+
+	public void setDynamicDestinationCacheSize(int dynamicDestinationCacheSize) {
+		this.dynamicDestinationCacheSize = dynamicDestinationCacheSize;
 	}
 
 	/*
@@ -295,5 +348,4 @@ public class BindingServiceProperties
 				Bindable.ofInstance(bindingPropertiesTarget));
 		this.bindings.put(binding, bindingPropertiesTarget);
 	}
-
 }

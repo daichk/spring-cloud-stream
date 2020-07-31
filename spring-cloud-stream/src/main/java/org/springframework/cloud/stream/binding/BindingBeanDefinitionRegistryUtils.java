@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2017 the original author or authors.
+ * Copyright 2015-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,7 +24,6 @@ import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.support.AutowireCandidateQualifier;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
 import org.springframework.beans.factory.support.RootBeanDefinition;
-import org.springframework.cloud.stream.annotation.Bindings;
 import org.springframework.cloud.stream.annotation.Input;
 import org.springframework.cloud.stream.annotation.Output;
 import org.springframework.core.annotation.AnnotationUtils;
@@ -38,7 +37,6 @@ import org.springframework.util.StringUtils;
  * @author Dave Syer
  * @author Artem Bilan
  */
-@SuppressWarnings("deprecation")
 public abstract class BindingBeanDefinitionRegistryUtils {
 
 	public static void registerInputBindingTargetBeanDefinition(String qualifierValue,
@@ -83,14 +81,18 @@ public abstract class BindingBeanDefinitionRegistryUtils {
 			Input input = AnnotationUtils.findAnnotation(method, Input.class);
 			if (input != null) {
 				String name = getBindingTargetName(input, method);
-				registerInputBindingTargetBeanDefinition(input.value(), name,
-						bindingTargetInterfaceBeanName, method.getName(), registry);
+				if (!registry.containsBeanDefinition(name)) {
+					registerInputBindingTargetBeanDefinition(input.value(), name,
+							bindingTargetInterfaceBeanName, method.getName(), registry);
+				}
 			}
 			Output output = AnnotationUtils.findAnnotation(method, Output.class);
 			if (output != null) {
 				String name = getBindingTargetName(output, method);
-				registerOutputBindingTargetBeanDefinition(output.value(), name,
-						bindingTargetInterfaceBeanName, method.getName(), registry);
+				if (!registry.containsBeanDefinition(name)) {
+					registerOutputBindingTargetBeanDefinition(output.value(), name,
+							bindingTargetInterfaceBeanName, method.getName(), registry);
+				}
 			}
 		});
 	}
@@ -101,16 +103,12 @@ public abstract class BindingBeanDefinitionRegistryUtils {
 		if (type.isInterface()) {
 			RootBeanDefinition rootBeanDefinition = new RootBeanDefinition(
 					BindableProxyFactory.class);
-			rootBeanDefinition
-					.addQualifier(new AutowireCandidateQualifier(Bindings.class, parent));
 			rootBeanDefinition.getConstructorArgumentValues()
 					.addGenericArgumentValue(type);
 			registry.registerBeanDefinition(type.getName(), rootBeanDefinition);
 		}
 		else {
 			RootBeanDefinition rootBeanDefinition = new RootBeanDefinition(type);
-			rootBeanDefinition
-					.addQualifier(new AutowireCandidateQualifier(Bindings.class, parent));
 			registry.registerBeanDefinition(type.getName(), rootBeanDefinition);
 		}
 	}
